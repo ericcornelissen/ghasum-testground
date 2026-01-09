@@ -10,7 +10,7 @@ const REPOSITORY = "chains-project/ghasum";
 const OS = os.platform().toLowerCase();
 const ARCH = os.arch().toLowerCase();
 
-const WORKFLOW = process.env.GITHUB_WORKFLOW_REF;
+const WORKFLOW = process.env.GITHUB_WORKFLOW_REF.split("@")[0];
 const JOB = process.env.GITHUB_JOB;
 
 let TMP;
@@ -48,7 +48,7 @@ try {
 
 	// TODO: expose
 } catch (error) {
-	console.error(error);
+	console.error(`::error::${error}`);
 	nuke();
 }
 
