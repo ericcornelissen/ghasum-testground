@@ -10,6 +10,8 @@ jobs:
     steps:
       - name: Verify action checksums
         uses: ericcornelissen/ghasum-testground/.github/actions/ghasum2@main # todo current ref?
+        env: # TODO: avoid?
+          GH_TOKEN: ${{ github.token }}
       - name: Step with pre-script
         uses: step-security/harden-runner@c6295a65d1254861815972266d5933fd6e532bdf # v2.11.1
         with:

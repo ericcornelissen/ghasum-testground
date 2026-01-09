@@ -15,7 +15,6 @@ inputs:
     required: false
     default: v0.6.3
 
-
 runs:
   using: node24
   pre: ghasum.js
