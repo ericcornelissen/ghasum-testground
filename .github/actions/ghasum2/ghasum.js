@@ -10,7 +10,7 @@ const REPOSITORY = "chains-project/ghasum";
 const OS = os.platform().toLowerCase();
 const ARCH = os.arch().toLowerCase();
 
-const WORKFLOW = process.env.GITHUB_WORKFLOW_REF.split("@")[0];
+const WORKFLOW = process.env.GITHUB_WORKFLOW_REF.replace(process.env.GITHUB_REPOSITORY).split("@")[0];
 const JOB = process.env.GITHUB_JOB;
 
 let TMP;
@@ -53,9 +53,15 @@ try {
 }
 
 // --- Functions ---------------------------------------------------------------
-function exec(cmd, opts) {
-	console.info(cmd.join(" "));
-	spawnSync(cmd[0], cmd.slice(1, cmd.length), { stdio: ["pipe", "inherit", "inherit"], ...opts });
+function exec(command, opts) {
+	console.info(command.join(" "));
+
+	const cmd = command[0];
+	const args = command.slice(1, command.length);
+	const { status } = spawnSync(cmd, args, { stdio: ["pipe", "inherit", "inherit"], ...opts });
+	if (status !== 0) {
+		throw new Error("Command failed");
+	}
 }
 
 function nuke() {
