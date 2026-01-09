@@ -14,8 +14,17 @@ inputs:
     description: The version of ghasum to use
     required: false
     default: v0.6.3
+  workflow:
+    description: _should not be set manually_
+    required: false
+    default: ${{ github.workflow_ref }}
+  job:
+    description: _should not be set manually_
+    required: false
+    default: ${{ github.job }}
+
 
 runs:
   using: node24
   pre: ghasum.js
-  main: --help
+  main: noop.js
