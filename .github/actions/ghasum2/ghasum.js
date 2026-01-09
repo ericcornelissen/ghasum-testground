@@ -2,18 +2,16 @@ import { spawnSync } from 'node:child_process';
 import * as os from "node:os";
 import * as process from "node:process";
 
-console.log(process.env);
-
 // --- Constants ---------------------------------------------------------------
 const CHECKSUM_FILE = "checksums-sha512.txt";
 const REPOSITORY = "chains-project/ghasum";
 
 // --- Context -----------------------------------------------------------------
-const OS = os.platform().toLowerCase(); // TODO
-const ARCH = os.arch().toLowerCase(); // TODO
+const OS = os.platform().toLowerCase();
+const ARCH = os.arch().toLowerCase();
 
-const WORKFLOW = ""; // TODO
-const JOB = ""; // TODO
+const WORKFLOW = process.env.GITHUB_WORKFLOW_REF;
+const JOB = process.env.GITHUB_JOB;
 
 let TMP;
 switch (`${OS}-${ARCH}`) {
@@ -26,32 +24,50 @@ case "windows-x64":   TMP = "ghasum_windows_amd64.zip";   break;
 }
 
 // --- Inputs ------------------------------------------------------------------
-const VERSION = "v0.6.3"; // TODO
-const CHECKSUM = "sha256:ea8d55ff6d1a0a733a499f52594e25841038e65de1f45986cb0eea3ecd011c34".replace(/^sha256:/, ""); // TODO
+const CHECKSUM = process.env.INPUT_CHECKSUM.replace(/^sha256:/, "");
+const MODE = process.env.INPUT_MODE;
+const VERSION = process.env.INPUT_VERSION;
 
 // --- Script ------------------------------------------------------------------
 try {
-  const cwd = "/tmp/ghasum";
+	if (MODE !== "install" && MODE !== "verify") {
+		throw new Error(`mode must be 'install' or 'verify', got: ${MODE}`);
+	}
 
-  spawnSync("mkdir", ["-p", cwd]);
-  spawnSync("gh", ["release", "download", VERSION, "--repo", REPOSITORY, "--pattern", CHECKSUM_FILE], { cwd });
-  spawnSync("shasum", ["-a", "256", "-c", "-"], { cwd, input: `${CHECKSUM}  ${CHECKSUM_FILE}` });
-  spawnSync("gh", ["release", "download", VERSION, "--repo", REPOSITORY, "--pattern", TMP], { cwd });
-  spawnSync("shasum", ["--check", "--ignore-missing", CHECKSUM_FILE], { cwd });
-  spawnSync("tar", ["-xf", TMP], { cwd });
-  spawnSync("./ghasum"["verify", "-cache", "/home/runner/work/_actions", "-no-evict", "-offline", `${WORKFLOW}:${JOB}`], { cwd });
+	const cwd = "/tmp/ghasum";
+	exec(["mkdir", "-p", cwd]);
+	exec(["gh", "release", "download", VERSION, "--repo", REPOSITORY, "--pattern", CHECKSUM_FILE], { cwd });
+	exec(["shasum", "-a", "256", "-c", "-"], { cwd, input: `${CHECKSUM}  ${CHECKSUM_FILE}` });
+	exec(["gh", "release", "download", VERSION, "--repo", REPOSITORY, "--pattern", TMP], { cwd });
+	exec(["shasum", "--check", "--ignore-missing", CHECKSUM_FILE], { cwd });
+	exec(["tar", "-xf", TMP], { cwd });
 
-  // TODO: expose
-} catch {
-  switch (OS) {
-  case "linux":
-    spawnSync("rm", ["-rf", "/home/runner/work/_actions"]);
-    break;
-  case "macos":
-    spawnSync("rm", ["-rf", "/Users/runner/work/_actions"]);
-    break;
-  case "windows":
-    spawnSync("rm", ["-rf", "C:\\a\\_actions", "D:\\a\\_actions"]);
-    break;
-  }
+	if (MODE === "verify") {
+		exec(["./ghasum", "verify", "-cache", "/home/runner/work/_actions", "-no-evict", "-offline", `${WORKFLOW}:${JOB}`], { cwd });
+	}
+
+	// TODO: expose
+} catch (error) {
+	console.error(error);
+	nuke();
+}
+
+// --- Functions ---------------------------------------------------------------
+function exec(cmd, opts) {
+	console.info(cmd.join(" "));
+	spawnSync(cmd[0], cmd.slice(1, cmd.length), opts);
+}
+
+function nuke() {
+	switch (OS) {
+	case "linux":
+		exec(["rm", "-rf", "/home/runner/work/_actions"]);
+		break;
+	case "macos":
+		exec(["rm", "-rf", "/Users/runner/work/_actions"]);
+		break;
+	case "windows":
+		exec(["rm", "-rf", "C:\\a\\_actions", "D:\\a\\_actions"]);
+		break;
+	}
 }
