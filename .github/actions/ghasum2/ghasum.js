@@ -10,7 +10,7 @@ const REPOSITORY = "chains-project/ghasum";
 const ARCH = arch().toLowerCase();
 const OS = platform().toLowerCase();
 
-const WORKFLOW = env.GITHUB_WORKFLOW_REF.replace(env.GITHUB_REPOSITORY, "").split("@")[0];
+const WORKFLOW = env.GITHUB_WORKFLOW_REF.replace(`${env.GITHUB_REPOSITORY}/`, "").split("@")[0];
 const JOB = env.GITHUB_JOB;
 
 let TMP;
