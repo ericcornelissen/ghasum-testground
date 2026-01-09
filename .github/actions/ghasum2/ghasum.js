@@ -55,7 +55,7 @@ try {
 // --- Functions ---------------------------------------------------------------
 function exec(cmd, opts) {
 	console.info(cmd.join(" "));
-	spawnSync(cmd[0], cmd.slice(1, cmd.length), opts);
+	spawnSync(cmd[0], cmd.slice(1, cmd.length), { stdio: ["pipe", "inherit", "inherit"], ...opts });
 }
 
 function nuke() {
