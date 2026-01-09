@@ -1,0 +1,426 @@
+name: Check
+on:
+  workflow_dispatch:
+
+permissions: read-all
+
+jobs:
+  check:
+    name: ${{ matrix.what }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        what:
+          - ci
+          - dependencies
+          - formatting
+          - js
+          - json
+          - licenses
+          - lockfile
+          - manifest
+          - md
+          - sh
+          - yml
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        with:
+          persist-credentials: false
+      - name: Verify action checksums
+        uses: ./.github/actions/ghasum
+      - name: Install tooling
+        uses: asdf-vm/actions/install@v4.0.0
+        if: ${{ matrix.what == 'ci' || matrix.what == 'sh' }}
+      - name: Install Node.js
+        uses: actions/setup-node@v6.0.0
+        with:
+          cache: npm
+          node-version-file: .nvmrc
+      - name: Install dependencies
+        run: npm clean-install
+      - name: Check
+        run: npm run "check:${WHAT}"
+        env:
+          WHAT: ${{ matrix.what }}
+  codeql:
+    name: CodeQL (${{ matrix.what }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        what:
+          - javascript
+          - actions
+    permissions:
+      security-events: write # To upload CodeQL results
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        with:
+          persist-credentials: false
+      - name: Verify action checksums
+        uses: ./.github/actions/ghasum
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4.31.7
+        with:
+          config-file: ./.github/codeql.yml
+          languages: ${{ matrix.what }}
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v4.31.7
+  odgen:
+    name: ODGen
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        with:
+          persist-credentials: false
+      - name: Verify action checksums
+        uses: ./.github/actions/ghasum
+      - name: Perform ODGen analysis
+        uses: ericcornelissen/odgen-action@v1.1.1
+        with:
+          vulnerability_type: os_command, code_exec, proto_pollution, ipt, xss, path_traversal
+  reproducible:
+    name: Reproducible build
+    runs-on: ubuntu-24.04
+    needs:
+      - transpile
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        with:
+          persist-credentials: false
+      - name: Verify action checksums
+        uses: ./.github/actions/ghasum
+      - name: Install Node.js
+        uses: actions/setup-node@v6.0.0
+        with:
+          cache: npm
+          node-version-file: .nvmrc
+      - name: Install dependencies
+        run: npm clean-install
+      - name: Simulate publish
+        run: |
+          npm run transpile
+          npm pack
+      - name: Compute checksum
+        run: shasum -- *.tgz | tee checksums.txt
+      - name: Reset to a clean state
+        run: |
+          npm run clean
+          rm -- *.tgz
+      - name: Simulate publish again
+        run: |
+          npm run transpile
+          npm pack
+      - name: Verify checksum
+        run: shasum --check checksums.txt --strict
+  semgrep:
+    name: Semgrep
+    runs-on: ubuntu-24.04
+    permissions:
+      security-events: write # To upload SARIF results
+    container:
+      image: semgrep/semgrep
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        with:
+          persist-credentials: false
+      - name: Perform Semgrep analysis
+        run: semgrep --sarif --output semgrep.sarif
+      - name: Upload Semgrep report to GitHub
+        uses: github/codeql-action/upload-sarif@149d184a5153ea45e6fbcef5588ac7b8c7af9835 # v3.29.0
+        if: ${{ failure() || success() }}
+        with:
+          sarif_file: semgrep.sarif
+  test-breakage:
+    name: Breakage
+    runs-on: ubuntu-24.04
+    needs:
+      - test-integration
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        with:
+          persist-credentials: false
+      - name: Verify action checksums
+        uses: ./.github/actions/ghasum
+      - name: Install Node.js
+        uses: actions/setup-node@v6.0.0
+        with:
+          cache: npm
+          node-version-file: .nvmrc
+      - name: Install dependencies
+        run: npm clean-install
+      - name: Run breakage tests
+        run: npm run coverage:breakage
+  test-compatibility:
+    name: Runtime compatibility (${{ matrix.node-version }})
+    runs-on: ubuntu-24.04
+    needs:
+      - test-integration
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version:
+          - 14.18.0
+          - 16.13.0
+          - 18.0.0
+          - 19.0.0
+          - 20.0.0
+          - 22.0.0
+          - 24.0.0
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        with:
+          persist-credentials: false
+      - name: Verify action checksums
+        uses: ./.github/actions/ghasum
+      - name: Install Node.js
+        uses: actions/setup-node@v6.0.0
+        with:
+          cache: npm
+          node-version: ${{ matrix.node-version }}
+      - name: Install compatible npm version
+        run: npm install --global npm@8.1.2
+      - name: Install dependencies
+        run: npm clean-install
+      - name: Run runtime compatibility tests
+        run: npm run coverage:compat:runtime
+      - name: Run experimental regexp engine compatibility tests
+        if: ${{ matrix.node-version != '14.18.0' }}
+        run: npm run coverage:compat:regexp
+  test-dependencies:
+    name: Dependency compatibility (${{ matrix.name }}@${{ matrix.version }})
+    runs-on: ubuntu-24.04
+    needs:
+      - test-e2e
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: which
+            version: 4.0.0
+          - name: which
+            version: 5.0.0
+          - name: which
+            version: 6.0.0
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        with:
+          persist-credentials: false
+      - name: Verify action checksums
+        uses: ./.github/actions/ghasum
+      - name: Install Node.js
+        uses: actions/setup-node@v6.0.0
+        with:
+          cache: npm
+          node-version-file: .nvmrc
+      - name: Install required shells
+        run: sudo apt-get --assume-yes install csh zsh
+      - name: Install dependencies
+        run: npm clean-install
+      - name: Install ${{ matrix.name }}@${{ matrix.version }}
+        env:
+          NAME: ${{ matrix.name }}
+          VERSION: ${{ matrix.version }}
+        run: |
+          npm install "${NAME}@${VERSION}"
+          npm ls --all --omit dev
+      - name: Run end-to-end tests
+        run: npm run test:e2e
+  test-e2e:
+    name: End-to-end (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    needs:
+      - test-integration
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: MacOS
+            os: macos-26
+          - name: Ubuntu
+            os: ubuntu-24.04
+          - name: Windows
+            os: windows-2025
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        with:
+          persist-credentials: false
+      - name: Verify action checksums
+        uses: ./.github/actions/ghasum
+      - name: Install Node.js
+        uses: actions/setup-node@v6.0.0
+        with:
+          cache: npm
+          node-version-file: .nvmrc
+      - name: Install csh
+        if: ${{ matrix.name == 'Ubuntu' }}
+        run: sudo apt-get --assume-yes install csh
+      - name: Install Zsh
+        if: ${{ matrix.name == 'Ubuntu' }}
+        run: sudo apt-get --assume-yes install zsh
+      - name: Install dependencies
+        run: npm clean-install
+      - name: Run end-to-end tests
+        run: npm run coverage:e2e
+  test-integration:
+    name: Integration (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    needs:
+      - test-unit
+      - transpile
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: MacOS
+            os: macos-26
+          - name: Ubuntu
+            os: ubuntu-24.04
+          - name: Windows
+            os: windows-2025
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        with:
+          persist-credentials: false
+      - name: Verify action checksums
+        uses: ./.github/actions/ghasum
+      - name: Install Node.js
+        uses: actions/setup-node@v6.0.0
+        with:
+          cache: npm
+          node-version-file: .nvmrc
+      - name: Install csh
+        if: ${{ matrix.name == 'Ubuntu' }}
+        run: sudo apt-get --assume-yes install csh
+      - name: Install Zsh
+        if: ${{ matrix.name == 'Ubuntu' }}
+        run: sudo apt-get --assume-yes install zsh
+      - name: Install dependencies
+        run: npm clean-install
+      - name: Run integration tests
+        run: npm run coverage:integration
+  test-mutation-unit:
+    name: Mutation (Unit)
+    runs-on: ubuntu-24.04
+    needs:
+      - test-unit
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        with:
+          persist-credentials: false
+      - name: Verify action checksums
+        uses: ./.github/actions/ghasum
+      - name: Install Node.js
+        uses: actions/setup-node@v6.0.0
+        with:
+          cache: npm
+          node-version-file: .nvmrc
+      - name: Cache Stryker incremental report
+        uses: actions/cache@v5.0.1
+        with:
+          path: .cache/stryker-incremental-unit.json
+          key: mutation-unit-${{ github.run_number }}
+          restore-keys: |
+            mutation-unit-
+      - name: Install dependencies
+        run: npm clean-install
+      - name: Run mutation tests
+        run: npm run mutation:unit
+      - name: Upload mutation report
+        uses: actions/upload-artifact@v6.0.0
+        if: ${{ failure() || success() }}
+        with:
+          name: mutation-unit-report
+          path: |
+            _reports/mutation/unit.html
+            .cache/stryker-incremental-unit.json
+  test-mutation-integration:
+    name: Mutation (integration)
+    runs-on: ubuntu-24.04
+    needs:
+      - test-integration
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        with:
+          persist-credentials: false
+      - name: Verify action checksums
+        uses: ./.github/actions/ghasum
+      - name: Install Node.js
+        uses: actions/setup-node@v6.0.0
+        with:
+          cache: npm
+          node-version-file: .nvmrc
+      - name: Cache Stryker incremental report
+        uses: actions/cache@v5.0.1
+        with:
+          path: .cache/stryker-incremental-integration.json
+          key: mutation-integration-${{ github.run_number }}
+          restore-keys: |
+            mutation-integration-
+      - name: Install csh
+        run: sudo apt-get --assume-yes install csh
+      - name: Install Zsh
+        run: sudo apt-get --assume-yes install zsh
+      - name: Install dependencies
+        run: npm clean-install
+      - name: Run mutation tests
+        run: npm run mutation:integration
+      - name: Upload mutation report
+        uses: actions/upload-artifact@v6.0.0
+        if: ${{ failure() || success() }}
+        with:
+          name: mutation-integration-report
+          path: |
+            _reports/mutation/integration.html
+            .cache/stryker-incremental-integration.json
+  test-unit:
+    name: Unit
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        with:
+          persist-credentials: false
+      - name: Verify action checksums
+        uses: ./.github/actions/ghasum
+      - name: Install Node.js
+        uses: actions/setup-node@v6.0.0
+        with:
+          cache: npm
+          node-version-file: .nvmrc
+      - name: Install dependencies
+        run: npm clean-install
+      - name: Run unit tests
+        run: npm run coverage:unit
+  transpile:
+    name: Transpile
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        with:
+          persist-credentials: false
+      - name: Verify action checksums
+        uses: ./.github/actions/ghasum
+      - name: Install Node.js
+        uses: actions/setup-node@v6.0.0
+        with:
+          cache: npm
+          node-version-file: .nvmrc
+      - name: Install dependencies
+        run: npm clean-install
+      - name: Transpile to CommonJS
+        run: npm run transpile
