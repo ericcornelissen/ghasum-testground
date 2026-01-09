@@ -1,0 +1,21 @@
+name: ghasum
+description: Verify checksums of actions
+
+inputs:
+  checksum:
+    description: The checksum of the ghasum checksums file
+    required: false
+    default: sha256:ea8d55ff6d1a0a733a499f52594e25841038e65de1f45986cb0eea3ecd011c34
+  mode:
+    description: Whether to 'verify' checksums or just 'install' ghasum
+    required: false
+    default: verify
+  version:
+    description: The version of ghasum to use
+    required: false
+    default: v0.6.3
+
+runs:
+  using: node24
+  pre: ghasum.js
+  main: --help
