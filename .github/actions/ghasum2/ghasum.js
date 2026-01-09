@@ -1,17 +1,17 @@
 import { spawnSync } from 'node:child_process';
-import * as os from "node:os";
-import * as process from "node:process";
+import { arch, platform } from "node:os";
+import { env, exit } from "node:process";
 
 // --- Constants ---------------------------------------------------------------
 const CHECKSUM_FILE = "checksums-sha512.txt";
 const REPOSITORY = "chains-project/ghasum";
 
 // --- Context -----------------------------------------------------------------
-const OS = os.platform().toLowerCase();
-const ARCH = os.arch().toLowerCase();
+const ARCH = arch().toLowerCase();
+const OS = platform().toLowerCase();
 
-const WORKFLOW = process.env.GITHUB_WORKFLOW_REF.replace(process.env.GITHUB_REPOSITORY, "").split("@")[0];
-const JOB = process.env.GITHUB_JOB;
+const WORKFLOW = env.GITHUB_WORKFLOW_REF.replace(env.GITHUB_REPOSITORY, "").split("@")[0];
+const JOB = env.GITHUB_JOB;
 
 let TMP;
 switch (`${OS}-${ARCH}`) {
@@ -24,9 +24,9 @@ case "windows-x64":   TMP = "ghasum_windows_amd64.zip";   break;
 }
 
 // --- Inputs ------------------------------------------------------------------
-const CHECKSUM = process.env.INPUT_CHECKSUM.replace(/^sha256:/, "");
-const MODE = process.env.INPUT_MODE;
-const VERSION = process.env.INPUT_VERSION;
+const CHECKSUM = env.INPUT_CHECKSUM.replace(/^sha256:/, "");
+const MODE = env.INPUT_MODE;
+const VERSION = env.INPUT_VERSION;
 
 // --- Script ------------------------------------------------------------------
 try {
@@ -47,9 +47,12 @@ try {
 	}
 
 	// TODO: expose
+
+	exit(0);
 } catch (error) {
 	console.error(`::error::${error}`);
 	nuke();
+	exit(1);
 }
 
 // --- Functions ---------------------------------------------------------------
